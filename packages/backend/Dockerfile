@@ -12,16 +12,26 @@
 # Alternatively, there is also a multi-stage Dockerfile documented here:
 # https://backstage.io/docs/deployment/docker#multi-stage-build
 
-FROM node:24-trixie-slim
+# Switched to Node 22 (LTS) to ensure isolated-vm and other native modules compile correctly
+FROM node:22-bookworm-slim
 
 # Set Python interpreter for `node-gyp` to use
 ENV PYTHON=/usr/bin/python3
 
 # Install isolate-vm dependencies, these are needed by the @backstage/plugin-scaffolder-backend.
+# Also includes sqlite3 dependencies. You can skip libsqlite3-dev if you don't use sqlite3 in the image,
+# in which case you should also move better-sqlite3 to "devDependencies" in package.json.
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends python3 g++ build-essential && \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    g++ \
+    make \
+    build-essential \
+    libsqlite3-dev \
+    pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 # Install sqlite3 dependencies. You can skip this if you don't use sqlite3 in the image,
@@ -31,6 +41,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
+
+# Enable Corepack to ensure Yarn 4.x is used instead of the default Yarn 1.x
+RUN corepack enable
+
+# Pre-create the Corepack cache directory and give the node user ownership to avoid EACCES errors
+RUN mkdir -p /home/node/.cache/node/corepack && chown -R node:node /home/node/.cache
 
 # From here on we use the least-privileged `node` user to run the backend.
 USER node
