@@ -140,20 +140,7 @@ jobs:
         git config --global user.name "$GIT_USERNAME"
         git config --global user.email "$GIT_EMAIL"
 
-    - name: Set up kubeconfig
-      run: |
-        mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
-        chmod 600 $HOME/.kube/config
-
-    - name: Create DB Secret in Cluster
-      run: |
-        kubectl create namespace backstage --dry-run=client -o yaml | kubectl apply -f -
-        kubectl create secret generic backstage-db-credentials \
-          --namespace backstage \
-          --from-literal=username=backstage \
-          --from-literal=password=${{ env.POSTGRES_PASSWORD }} \
-          --dry-run=client -o yaml | kubectl apply -f -
+    
 
     - name: Update Image Tag
       run: |
