@@ -95,9 +95,9 @@ jobs:
       run: |
         docker push ${{ env.DOCKER_USERNAME }}/${{ env.APP_NAME }}:${{ github.sha }}
 
-# ===========================
+# ==========================
 # STAGE 3: GITOPS UPDATE
-# ===========================
+# ==========================
   deploy:
     name: Update GitOps Manifests
     needs: build
