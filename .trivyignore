@@ -1,0 +1,11 @@
+# Waiting for tar 7.5.8 release to fix path traversal
+CVE-2026-24842# node-tar: Waiting for a fix beyond 7.5.7
+CVE-2026-23745
+CVE-2026-23950
+CVE-2026-24842
+
+# glob: CLI command injection (Low risk in Backstage build context)
+CVE-2025-64756
+
+# fast-xml-parser: DoS numeric entities
+CVE-2026-25128

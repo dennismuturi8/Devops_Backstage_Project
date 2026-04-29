@@ -1,0 +1,106 @@
+---
+# App 1 — Backstage core (Deployment, Service, Ingress, CNPG Cluster)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backstage
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dennismuturi8/DevOps_Backstage_Project.git
+    targetRevision: main
+    path: manifest/backstage        # ← only backstage-scoped files
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backstage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas
+
+---
+# App 2 — Ingress-NGINX LoadBalancer Service
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx-config
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dennismuturi8/DevOps_Backstage_Project.git
+    targetRevision: main
+    path: manifest/ingress          # ← ingress-nginx-lb.yaml goes here
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx        # ← correct namespace for ingress controller
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
+
+---
+# App 3 — MetalLB IP Pool Configuration
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-config
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dennismuturi8/DevOps_Backstage_Project.git
+    targetRevision: main
+    path: manifest/metallb          # ← metallb-config.yaml goes here
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system       # ← correct namespace for MetalLB
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
+
+---
+# App 4 — Cert-Manager ClusterIssuer (cluster-scoped resource)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-config
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dennismuturi8/DevOps_Backstage_Project.git
+    targetRevision: main
+    path: manifest/certmanager      # ← letsencrypt.yaml goes here
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager         # ← ClusterIssuer is cluster-scoped but
+                                    #   cert-manager namespace is the convention
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: backstage
+  name: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: backstage
+    spec:
+      containers:
+      - image: dennismuturi8/backstage:dc8dfc16c770c6fd019b40276c5b203408bf84da
+        name: backstage
+        ports:
+        - containerPort: 7007
+        env:                                      # Environment variables for DB connection
+        - name: POSTGRES_HOST
+          value: "backstage-db-rw.backstage.svc" # CNPG service name (read-write)
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: backstage-db-app             # auto-created by CNPG
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: backstage-db-app             # auto-created by CNPG
+              key: password
+        resources:                               # Best practice: always set limits
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:                          # Best practice: health probes
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 60
+          periodSeconds: 20

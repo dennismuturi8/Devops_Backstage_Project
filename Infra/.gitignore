@@ -1,0 +1,12 @@
+# Local .terraform folder
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+
+# Sensitive variables
+*.tfvars

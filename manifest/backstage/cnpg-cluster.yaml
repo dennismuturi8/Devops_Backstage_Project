@@ -1,0 +1,43 @@
+# ==============================================================
+# NOTE: The "backstage-db-credentials" Secret is NOT defined here.
+# It is created by the GitHub Actions pipeline (Stage 3) using
+# the POSTGRES_PASSWORD secret stored in GitHub Secrets.
+# This file only defines the CNPG Cluster resource which
+# references that secret by name.
+# ==============================================================
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: backstage-db
+  namespace: backstage
+spec:
+  instances: 1                    # EDIT: set to 3 for high-availability in production
+  primaryUpdateStrategy: unsupervised
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "128MB"
+
+  bootstrap:
+    initdb:
+      database: backstage
+      owner: backstage
+      secret:
+        name: backstage-db-credentials   # ← pipeline creates this secret before ArgoCD syncs this file
+
+  storage:
+    size: 1Gi                     # EDIT: increase as needed for production
+    # storageClass: standard      # Uncomment and set your StorageClass if needed
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  monitoring:
+    enablePodMonitor: false       # Set true if you have Prometheus installed

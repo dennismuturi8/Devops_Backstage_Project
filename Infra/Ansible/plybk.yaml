@@ -1,0 +1,146 @@
+---
+- name: Configure Kubeadm EC2 with Python, ArgoCD, Nginx Ingress, MetalLB, Cert-Manager, and CloudNativePG
+  hosts: control_plane
+  become: yes
+  vars:
+    kubeconfig: /etc/kubernetes/admin.conf
+    argo_namespace: argocd
+    nginx_namespace: ingress-nginx
+    metallb_namespace: metallb-system
+    certmanager_namespace: cert-manager
+    cnpg_namespace: cnpg-system
+    argo_version: "v2.10.0" 
+
+  tasks:
+    ## 1. Prerequisites
+    - name: Ensure Python3 and Pip are installed
+      apt:
+        name: [python3, python3-pip, curl, git, apt-transport-https]
+        state: present
+        update_cache: yes
+
+    - name: Check if Helm is installed
+      shell: which helm
+      register: helm_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Helm (if not present)
+      shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      when: helm_check.rc != 0
+
+    ## 2. Install Nginx Ingress
+    - name: Create Nginx Ingress Namespace
+      shell: kubectl --kubeconfig {{ kubeconfig }} create namespace {{ nginx_namespace }}
+      register: ns_res
+      failed_when: false
+      changed_when: "'created' in ns_res.stdout"
+
+    - name: Apply Nginx Ingress (Kubeadm/Bare-metal version)
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }} apply -f 
+        https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/baremetal/deploy.yaml
+      register: nginx_out
+      changed_when: "'created' in nginx_out.stdout or 'configured' in nginx_out.stdout"
+
+    ## 3. Install ArgoCD
+    - name: Create ArgoCD Namespace
+      shell: kubectl --kubeconfig {{ kubeconfig }} create namespace {{ argo_namespace }}
+      register: argo_ns_res
+      failed_when: false
+      changed_when: "'created' in argo_ns_res.stdout"
+
+    - name: Apply ArgoCD Manifest (Using Server-Side Apply)
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }} apply --server-side --force-conflicts 
+        -n {{ argo_namespace }} -f 
+        https://raw.githubusercontent.com/argoproj/argo-cd/{{ argo_version }}/manifests/install.yaml
+      register: argo_out
+      changed_when: "'created' in argo_out.stdout or 'configured' in argo_out.stdout"
+
+    ## 4. Install MetalLB
+    - name: Create MetalLB Namespace
+      shell: kubectl --kubeconfig {{ kubeconfig }} create namespace {{ metallb_namespace }}
+      register: metallb_ns_res
+      failed_when: false
+      changed_when: "'created' in metallb_ns_res.stdout"
+
+    - name: Apply MetalLB Manifest
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }} apply -f 
+        https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+      register: metallb_out
+      changed_when: "'created' in metallb_out.stdout or 'configured' in metallb_out.stdout"
+
+    ## 5. Install Cert-Manager
+    - name: Add Jetstack Helm repository
+      shell: >
+        helm repo add jetstack https://charts.jetstack.io &&
+        helm repo update
+      args:
+        executable: /bin/bash
+      register: helm_repo_out
+      changed_when: "'added' in helm_repo_out.stdout or 'updated' in helm_repo_out.stdout"
+
+    - name: Create Cert-Manager Namespace
+      shell: kubectl --kubeconfig {{ kubeconfig }} create namespace {{ certmanager_namespace }}
+      register: certmanager_ns_res
+      failed_when: false
+      changed_when: "'created' in certmanager_ns_res.stdout"
+
+    - name: Install Cert-Manager via Helm
+      shell: >
+        KUBECONFIG={{ kubeconfig }} helm upgrade --install cert-manager jetstack/cert-manager
+        --namespace {{ certmanager_namespace }}
+        --version v1.13.3
+        --set installCRDs=true
+      register: certmanager_out
+      changed_when: "'deployed' in certmanager_out.stdout or 'upgraded' in certmanager_out.stdout"
+
+    ## 6. Install CloudNativePG (CNPG)
+    - name: Add CloudNativePG Helm repository
+      shell: >
+        helm repo add cnpg https://cloudnative-pg.github.io/charts &&
+        helm repo update
+      args:
+        executable: /bin/bash
+      register: cnpg_repo_out
+      changed_when: "'added' in cnpg_repo_out.stdout or 'updated' in cnpg_repo_out.stdout"
+
+    - name: Create CloudNativePG Namespace
+      shell: kubectl --kubeconfig {{ kubeconfig }} create namespace {{ cnpg_namespace }}
+      register: cnpg_ns_res
+      failed_when: false
+      changed_when: "'created' in cnpg_ns_res.stdout"
+
+    - name: Install CloudNativePG Operator via Helm
+      shell: >
+        KUBECONFIG={{ kubeconfig }} helm upgrade --install cnpg cnpg/cloudnative-pg
+        --namespace {{ cnpg_namespace }}
+      register: cnpg_out
+      changed_when: "'deployed' in cnpg_out.stdout or 'upgraded' in cnpg_out.stdout"
+
+    ## 7. Setup Local User Access
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: "/home/ubuntu/.kube"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/ubuntu/.kube/config"
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    ## 8. Register Backstage app with ArgoCD
+    - name: Register Backstage app with ArgoCD
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }} apply -f
+        https://raw.githubusercontent.com/dennismuturi8/DevOps_Backstage_Project/main/argocd-app.yaml
