@@ -8,7 +8,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-  - 192.168.1.200-192.168.1.210   # EDIT: replace with your actual free IP range
+  - 10.0.2.240-10.0.2.250   # EDIT: replace with your actual free IP range
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement

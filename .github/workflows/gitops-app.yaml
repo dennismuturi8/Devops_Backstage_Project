@@ -17,6 +17,7 @@ env:
   GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
   GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
   GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   YARNSW_COREPACK_COMPAT: 'true'
 
 jobs:
