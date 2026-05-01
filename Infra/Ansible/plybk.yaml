@@ -1,5 +1,5 @@
 ---
-- name: Configure Kubeadm EC2 with Python, ArgoCD, Nginx Ingress, MetalLB, Cert-Manager, and CloudNativePG
+- name: Configure Kubeadm EC2 with Python, ArgoCD, Nginx Ingress, MetalLB, Cert-Manager, CloudNativePG and Sealed Secrets
   hosts: control_plane
   become: yes
   vars:
@@ -9,7 +9,8 @@
     metallb_namespace: metallb-system
     certmanager_namespace: cert-manager
     cnpg_namespace: cnpg-system
-    argo_version: "v2.10.0" 
+    sealed_secrets_namespace: kube-system    # Sealed Secrets lives in kube-system by convention
+    argo_version: "v2.10.0"
 
   tasks:
     ## 1. Prerequisites
@@ -39,7 +40,7 @@
 
     - name: Apply Nginx Ingress (Kubeadm/Bare-metal version)
       shell: >
-        kubectl --kubeconfig {{ kubeconfig }} apply -f 
+        kubectl --kubeconfig {{ kubeconfig }} apply -f
         https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/baremetal/deploy.yaml
       register: nginx_out
       changed_when: "'created' in nginx_out.stdout or 'configured' in nginx_out.stdout"
@@ -53,8 +54,8 @@
 
     - name: Apply ArgoCD Manifest (Using Server-Side Apply)
       shell: >
-        kubectl --kubeconfig {{ kubeconfig }} apply --server-side --force-conflicts 
-        -n {{ argo_namespace }} -f 
+        kubectl --kubeconfig {{ kubeconfig }} apply --server-side --force-conflicts
+        -n {{ argo_namespace }} -f
         https://raw.githubusercontent.com/argoproj/argo-cd/{{ argo_version }}/manifests/install.yaml
       register: argo_out
       changed_when: "'created' in argo_out.stdout or 'configured' in argo_out.stdout"
@@ -68,7 +69,7 @@
 
     - name: Apply MetalLB Manifest
       shell: >
-        kubectl --kubeconfig {{ kubeconfig }} apply -f 
+        kubectl --kubeconfig {{ kubeconfig }} apply -f
         https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
       register: metallb_out
       changed_when: "'created' in metallb_out.stdout or 'configured' in metallb_out.stdout"
@@ -121,7 +122,52 @@
       register: cnpg_out
       changed_when: "'deployed' in cnpg_out.stdout or 'upgraded' in cnpg_out.stdout"
 
-    ## 7. Setup Local User Access
+    ## 7. Install Sealed Secrets Controller
+    - name: Add Sealed Secrets Helm repository
+      shell: >
+        helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets &&
+        helm repo update
+      args:
+        executable: /bin/bash
+      register: ss_repo_out
+      changed_when: "'added' in ss_repo_out.stdout or 'updated' in ss_repo_out.stdout"
+
+    - name: Install Sealed Secrets Controller via Helm
+      shell: >
+        KUBECONFIG={{ kubeconfig }} helm upgrade --install sealed-secrets
+        sealed-secrets/sealed-secrets
+        --namespace {{ sealed_secrets_namespace }}
+        --version 2.15.3
+        --set fullnameOverride=sealed-secrets-controller
+      register: ss_out
+      changed_when: "'deployed' in ss_out.stdout or 'upgraded' in ss_out.stdout"
+
+    # Wait for the controller to be ready so kubeseal can fetch the public key
+    - name: Wait for Sealed Secrets controller to be ready
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }}
+        rollout status deployment/sealed-secrets-controller
+        -n {{ sealed_secrets_namespace }}
+        --timeout=120s
+      register: ss_ready
+      changed_when: false
+
+    # Fetch and save the public cert locally so you can run kubeseal offline
+    - name: Fetch Sealed Secrets public certificate
+      shell: >
+        kubeseal --kubeconfig {{ kubeconfig }}
+        --fetch-cert
+        --controller-name=sealed-secrets-controller
+        --controller-namespace={{ sealed_secrets_namespace }}
+        > /home/ubuntu/sealed-secrets-pub.pem
+      register: ss_cert
+      changed_when: true
+
+    - name: Print public cert location
+      debug:
+        msg: "Sealed Secrets public cert saved to /home/ubuntu/sealed-secrets-pub.pem — copy this to your local machine to run kubeseal offline."
+
+    ## 8. Setup Local User Access
     - name: Create .kube directory for ubuntu user
       file:
         path: "/home/ubuntu/.kube"
@@ -139,8 +185,19 @@
         group: ubuntu
         mode: '0600'
 
-    ## 8. Register Backstage app with ArgoCD
-    - name: Register Backstage app with ArgoCD
+    ## 9. Bootstrap ArgoCD — register the GitOps app
+    - name: Wait for ArgoCD server to be ready
+      shell: >
+        kubectl --kubeconfig {{ kubeconfig }}
+        rollout status deployment/argocd-server
+        -n {{ argo_namespace }}
+        --timeout=180s
+      register: argo_ready
+      changed_when: false
+
+    - name: Apply ArgoCD Application manifests
       shell: >
         kubectl --kubeconfig {{ kubeconfig }} apply -f
-        https://raw.githubusercontent.com/dennismuturi8/DevOps_Backstage_Project/main/argocd-app.yaml
+        https://raw.githubusercontent.com/dennismuturi8/DevOps_Backstage_Project/main/argocd-apps.yaml
+      register: argocd_app_out
+      changed_when: "'created' in argocd_app_out.stdout or 'configured' in argocd_app_out.stdout"

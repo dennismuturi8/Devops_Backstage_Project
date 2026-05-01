@@ -140,8 +140,6 @@ jobs:
         git config --global user.name "$GIT_USERNAME"
         git config --global user.email "$GIT_EMAIL"
 
-    
-
     - name: Update Image Tag
       run: |
         sed -i "s|image: ${{ env.DOCKER_USERNAME }}/${{ env.APP_NAME }}:.*|image: ${{ env.DOCKER_USERNAME }}/${{ env.APP_NAME }}:${{ github.sha }}|g" \
