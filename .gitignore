@@ -1,5 +1,5 @@
 # ── Secrets — NEVER commit these ─────────────────────────────────
-#secret.yaml
+secret.yaml
 *.plaintext.yaml
 *-unencrypted.yaml
 *-plain.yaml
